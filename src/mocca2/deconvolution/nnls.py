@@ -47,7 +47,7 @@ def nnls(A, b, maxiter=None, tol=None, l2=0.0):
             s[P] = lstsq(AtA[np.ix_(P, P)], Atb[P])[0]
 
         # Inner loop
-        while (iter < maxiter) and (s[P].min() < 0):  # C.1
+        while (iter < maxiter) and P.any() and (s[P].min() < 0):  # C.1
             iter += 1
             inds = P * (s < 0)
             alpha = (x[inds] / (x[inds] - s[inds])).min()  # C.2
@@ -65,6 +65,11 @@ def nnls(A, b, maxiter=None, tol=None, l2=0.0):
         w[:] = Atb - AtA @ x
 
         if iter == maxiter:
-            raise RuntimeError("NNLS: Iteration limit reached")
+            warnings.warn(
+                "NNLS: Iteration limit reached, returning best feasible estimate",
+                RuntimeWarning,
+            )
+            x = np.clip(x, 0.0, np.inf)
+            return x, np.linalg.norm(A @ x - b)
 
     return x, np.linalg.norm(A @ x - b)
