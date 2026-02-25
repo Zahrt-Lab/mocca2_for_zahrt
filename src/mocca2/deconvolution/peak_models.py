@@ -329,43 +329,48 @@ class Bemg(PeakModel):
         return const
 
 
-class Laplacian(PeakModel):
-    """Laplacian peak model: f(t|mu,b) = 1/(2b) * exp(-|t-mu|/b), scaled by h"""
+class BiLaplacian(PeakModel):
+    """BiLaplacian peak model with different left/right decay widths."""
 
     def n_params(self) -> int:
-        return 3
+        return 4
 
     def val(self, t: float | NDArray, *params: float) -> float | NDArray:
-        h, mu, b = params
-        b = np.clip(b, 1e-12, None)
-        return h * np.exp(-np.abs(t - mu) / b) / (2.0 * b)
+        h, mu, b1, b2 = params
+        b1 = np.clip(b1, 1e-12, None)
+        b2 = np.clip(b2, 1e-12, None)
+
+        left = (t <= mu) * np.exp((t - mu) / b1)
+        right = (t > mu) * np.exp(-(t - mu) / b2)
+        return h * (left + right)
 
     def grad(self, t: float | NDArray, *params: float) -> NDArray:
-        h, mu, b = params
-        b = np.clip(b, 1e-12, None)
+        h, mu, b1, b2 = params
+        b1 = np.clip(b1, 1e-12, None)
+        b2 = np.clip(b2, 1e-12, None)
 
-        abs_tm = np.abs(t - mu)
-        sign_tm = np.sign(t - mu)
-        base = np.exp(-abs_tm / b)
+        left = (t <= mu) * np.exp((t - mu) / b1)
+        right = (t > mu) * np.exp(-(t - mu) / b2)
 
-        grad_h = base / (2.0 * b)
-        grad_mu = h * base * sign_tm / (2.0 * b**2)
-        grad_b = h * base * (abs_tm - b) / (2.0 * b**3)
+        grad_h = left + right
+        grad_mu = h * (-left / b1 + right / b2)
+        grad_b1 = h * left * (mu - t) / b1**2
+        grad_b2 = h * right * (t - mu) / b2**2
 
-        return np.array([grad_h, grad_mu, grad_b])
+        return np.array([grad_h, grad_mu, grad_b1, grad_b2])
 
     def init_guess(
         self, height: float, maximum: float, width_left: float, width_right: float
     ) -> NDArray:
-        width = max((width_left + width_right) / 2.0, 1.0)
-        h = 2.0 * width * height
-        return np.array([h, maximum, width])
+        x0 = [height, maximum, max(width_left, 1.0), max(width_right, 1.0)]
+        return np.array(x0)
 
     def get_bounds(self, max_t: float) -> List[Tuple[float, float]]:
         const = [
             (0.0, np.inf),
             (0.0, max_t),
-            (0.1, max_t / 2.0 if max_t > 1 else 1.0),
+            (1.0, max_t / 2.0 if max_t > 2 else 1.0),
+            (1.0, max_t / 2.0 if max_t > 2 else 1.0),
         ]
 
         return const

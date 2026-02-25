@@ -24,7 +24,7 @@ class ProcessingSettings:
     """Maximum relative height of minima between peaks to split them"""
     explained_threshold: float = 0.995
     """Minimal R2 to consider peak resolved"""
-    peak_model: Literal["BiGaussian", "BiGaussianTailing", "FraserSuzuki", "Bemg", "Laplacian"] = (
+    peak_model: Literal["BiGaussian", "BiGaussianTailing", "FraserSuzuki", "Bemg", "BiLaplacian"] = (
         "Bemg"
     )
     """Model that describes the peak shape"""
