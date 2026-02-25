@@ -19,6 +19,7 @@ from mocca2.deconvolution.nonnegative_lstsq import concentrations_from_spectra
 from mocca2.deconvolution.peak_models import (
     PeakModel,
     Bemg,
+    Laplacian,
     FraserSuzuki,
     BiGaussian,
     BiGaussianTailing,
@@ -234,7 +235,7 @@ class Chromatogram(Data2D):
         self,
         model: (
             PeakModel
-            | Literal["BiGaussian", "BiGaussianTailing", "FraserSuzuki", "Bemg"]
+            | Literal["BiGaussian", "BiGaussianTailing", "FraserSuzuki", "Bemg", "Laplacian"]
         ),
         min_r2: float,
         relaxe_concs: bool,
@@ -441,7 +442,7 @@ class Chromatogram(Data2D):
         compounds: Dict[int, Compound],
         model: (
             PeakModel
-            | Literal["BiGaussian", "BiGaussianTailing", "FraserSuzuki", "Bemg"]
+            | Literal["BiGaussian", "BiGaussianTailing", "FraserSuzuki", "Bemg", "Laplacian"]
         ),
         relaxe_concs: bool,
         min_rel_integral: float,
@@ -458,6 +459,7 @@ class Chromatogram(Data2D):
                 "BiGaussianTailing": BiGaussianTailing,
                 "FraserSuzuki": FraserSuzuki,
                 "Bemg": Bemg,
+                "Laplacian": Laplacian,
             }[model]()
 
         # fine tune concentration profiles

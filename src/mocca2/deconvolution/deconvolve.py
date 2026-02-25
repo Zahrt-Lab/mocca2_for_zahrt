@@ -5,12 +5,12 @@ import numpy as np
 
 from mocca2.deconvolution.nonnegative_lstsq import concentrations_from_spectra, spectra_from_concentrations
 from mocca2.deconvolution.fit_peak_model import fit_peak_model
-from mocca2.deconvolution.peak_models import PeakModel, BiGaussian, BiGaussianTailing, FraserSuzuki, Bemg
+from mocca2.deconvolution.peak_models import PeakModel, BiGaussian, BiGaussianTailing, FraserSuzuki, Bemg, Laplacian
 
 
 def deconvolve_adaptive(
         data: NDArray,
-        model: PeakModel | Literal['BiGaussian', 'BiGaussianTailing', 'FraserSuzuki', 'Bemg'],
+    model: PeakModel | Literal['BiGaussian', 'BiGaussianTailing', 'FraserSuzuki', 'Bemg', 'Laplacian'],
         max_mse: float,
         relaxe_concs: bool,
         min_comps: int,
@@ -60,6 +60,7 @@ def deconvolve_adaptive(
             'BiGaussianTailing': BiGaussianTailing(),
             'FraserSuzuki': FraserSuzuki(),
             'Bemg': Bemg(),
+            'Laplacian': Laplacian(),
         }[model]
 
     for n_comps in range(min_comps, max_comps+1):

@@ -327,3 +327,45 @@ class Bemg(PeakModel):
         ]
 
         return const
+
+
+class Laplacian(PeakModel):
+    """Laplacian peak model: f(t|mu,b) = 1/(2b) * exp(-|t-mu|/b), scaled by h"""
+
+    def n_params(self) -> int:
+        return 3
+
+    def val(self, t: float | NDArray, *params: float) -> float | NDArray:
+        h, mu, b = params
+        b = np.clip(b, 1e-12, None)
+        return h * np.exp(-np.abs(t - mu) / b) / (2.0 * b)
+
+    def grad(self, t: float | NDArray, *params: float) -> NDArray:
+        h, mu, b = params
+        b = np.clip(b, 1e-12, None)
+
+        abs_tm = np.abs(t - mu)
+        sign_tm = np.sign(t - mu)
+        base = np.exp(-abs_tm / b)
+
+        grad_h = base / (2.0 * b)
+        grad_mu = h * base * sign_tm / (2.0 * b**2)
+        grad_b = h * base * (abs_tm - b) / (2.0 * b**3)
+
+        return np.array([grad_h, grad_mu, grad_b])
+
+    def init_guess(
+        self, height: float, maximum: float, width_left: float, width_right: float
+    ) -> NDArray:
+        width = max((width_left + width_right) / 2.0, 1.0)
+        h = 2.0 * width * height
+        return np.array([h, maximum, width])
+
+    def get_bounds(self, max_t: float) -> List[Tuple[float, float]]:
+        const = [
+            (0.0, np.inf),
+            (0.0, max_t),
+            (0.1, max_t / 2.0 if max_t > 1 else 1.0),
+        ]
+
+        return const
