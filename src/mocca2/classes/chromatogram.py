@@ -4,6 +4,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Literal, Dict, Callable, Any
 
+import copy
 import matplotlib.axes
 import numpy as np
 import matplotlib
@@ -69,7 +70,7 @@ class Chromatogram(Data2D):
 
         # Initialize sample data
         if isinstance(sample, Data2D):
-            self.__dict__ = sample.__dict__
+            self.__dict__ = copy.deepcopy(sample.__dict__)
         else:
             self.__dict__ = parsers.load_data2d(sample).__dict__
 
