@@ -356,6 +356,7 @@ class MoccaDataset:
             "min_r2": settings.explained_threshold,
             "relaxe_concs": settings.relaxe_concs,
             "max_comps": settings.max_peak_comps,
+            "max_workers": settings.deconvolution_max_workers,
         }
         if cores == 1:
             for idx, chromatogram in enumerate(self.chromatograms.values()):

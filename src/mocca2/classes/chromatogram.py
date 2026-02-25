@@ -1,6 +1,7 @@
 """High-level interface for processing single chromatogram"""
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Literal, Dict, Callable, Any
 
 import matplotlib.axes
@@ -237,6 +238,7 @@ class Chromatogram(Data2D):
         min_r2: float,
         relaxe_concs: bool,
         max_comps: int,
+        max_workers: int = 1,
     ) -> Chromatogram:
         """
         Deconvolves peaks with increasingly more components until MSE limit is reached. See `deconvolve_adaptive()` for details.
@@ -255,18 +257,17 @@ class Chromatogram(Data2D):
         max_comps: int
             Maximum number of components that can be fitted
 
+        max_workers: int
+            Maximum number of worker threads for deconvolving peaks in parallel. Values <= 1 use serial execution.
+
         Returns
         -------
         Chromatogram
             Returns self
         """
 
-        if len(self.peaks) == 0:
-            return self
-
-        base_ms = np.mean([np.mean(peak.data(self.data) ** 2) for peak in self.peaks])
-
-        for idx, peak in enumerate(self.peaks):
+        # # # Single peak deconvolution function for parallel execution
+        def _deconvolve_single_peak(idx: int, peak: Peak | DeconvolvedPeak):
             # prepare input data
             peak_data = peak.data(self)
             peak_ms = np.mean(peak_data**2)
@@ -281,9 +282,9 @@ class Chromatogram(Data2D):
                 peak_data, model, max_mse, relaxe_concs, min_comps, max_comps
             )
 
-            # save deconvolved peak
-            r2 = 1 - mse / peak_ms
-            self.peaks[idx] = DeconvolvedPeak(
+            r2_denom = max(float(peak_ms), np.finfo(float).eps)
+            r2 = 1 - mse / r2_denom
+            deconvolved_peak = DeconvolvedPeak(
                 peak=peak,
                 concentrations=concs,
                 spectra=spectra,
@@ -291,6 +292,42 @@ class Chromatogram(Data2D):
                 r2=r2,
                 resolved=max_mse > mse,
             )
+
+            return idx, deconvolved_peak
+
+        if len(self.peaks) == 0:
+            return self
+        # Average mean-square of peaks, used for setting MSE limit for small peaks to avoid overfitting
+        base_ms = np.mean([np.mean(peak.data(self.data) ** 2) for peak in self.peaks])
+
+        workers = min(max(1, int(max_workers)), len(self.peaks))
+
+        if workers <= 1:
+            for idx, peak in enumerate(self.peaks):
+                _, deconvolved_peak = _deconvolve_single_peak(idx, peak)
+                self.peaks[idx] = deconvolved_peak
+            return self
+
+        indexed_results: list[tuple[int, DeconvolvedPeak]] = []
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_idx = {
+                executor.submit(_deconvolve_single_peak, idx, peak): idx
+                for idx, peak in enumerate(self.peaks)
+            }
+
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    indexed_results.append(future.result())
+                except Exception as e:
+                    for pending in future_to_idx:
+                        pending.cancel()
+                    raise RuntimeError(
+                        f"Peak deconvolution failed for peak index {idx}"
+                    ) from e
+
+        for idx, deconvolved_peak in sorted(indexed_results, key=lambda d: d[0]):
+            self.peaks[idx] = deconvolved_peak
 
         return self
 

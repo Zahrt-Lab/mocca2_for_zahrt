@@ -30,6 +30,8 @@ class ProcessingSettings:
     """Model that describes the peak shape"""
     max_peak_comps: int = 4
     """Maximum number of deconvolved components in single peak"""
+    deconvolution_max_workers: int = 1
+    """Maximum number of worker threads used for deconvolving peaks within a chromatogram"""
     max_peak_distance: float = 1.0
     """Maximum peak distance deviation relative to peak width for one compound"""
     min_spectrum_correl: float = 0.99
@@ -78,6 +80,7 @@ class ProcessingSettings:
             explained_threshold=float(data["explained_threshold"]),
             peak_model=str(data["peak_model"]),
             max_peak_comps=int(data["max_peak_comps"]),
+            deconvolution_max_workers=int(data.get("deconvolution_max_workers", 1)),
             max_peak_distance=float(data["max_peak_distance"]),
             min_spectrum_correl=float(data["min_spectrum_correl"]),
             min_elution_time=float(data["min_elution_time"]),
