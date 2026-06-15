@@ -25,6 +25,7 @@ from mocca2.deconvolution.peak_models import (
     BiGaussianTailing,
 )
 from mocca2.serializing import dict_encoder
+from mocca2.math import cosine_similarity, entropy_similarity
 
 
 class Chromatogram(Data2D):
@@ -277,11 +278,26 @@ class Chromatogram(Data2D):
             # if peak MS (mean square) is smaller than average, use average to avoid small peaks having too many components
             ms = max(peak_ms, base_ms)
             max_mse = (1 - min_r2) * ms
-            min_comps = min(max(1, len(peak.all_maxima)), max_comps)
+            # Use spectra at peak maxima to estimate the number of distinct compounds.
+            maxima_spectra = self.data[:, [p for p in peak.all_maxima if p != peak.maximum]]            
+            n_distinct = 1
+            reference = self.data[:, peak.maximum]
+            for i in range(1, maxima_spectra.shape[1]):
+                sim = float(cosine_similarity(reference, maxima_spectra[:, i]))
+                sim_entropy = float(entropy_similarity(reference, maxima_spectra[:, i], 0.01))
+                print(f"DEBUG: cosine similarity between peak {peak.maximum} and peak {peak.all_maxima[i]} is {sim}")
+                print(f"DEBUG: entropy similarity between peak {peak.maximum} and peak {peak.all_maxima[i]} is {sim_entropy}")
+                if sim < 0.95:
+                    n_distinct += 1
+            
+             
+            # This replaces the all_maxima-based floor passed in as min_comps, since two
+            # maxima with nearly identical spectra should not force an extra component.            
+            effective_min = max(1, min(n_distinct, max_comps))
 
             # deconvolve
             concs, spectra, mse = deconvolve_adaptive(
-                peak_data, model, max_mse, relaxe_concs, min_comps, max_comps
+                peak_data, model, max_mse, relaxe_concs, effective_min, max_comps
             )
 
             r2_denom = max(float(peak_ms), np.finfo(float).eps)
@@ -301,7 +317,7 @@ class Chromatogram(Data2D):
             return self
         # Average mean-square of peaks, used for setting MSE limit for small peaks to avoid overfitting
         base_ms = np.mean([np.mean(peak.data(self.data) ** 2) for peak in self.peaks])
-
+        print("DEBUG: number of peaks to deconvolve:", len(self.peaks))
         workers = min(max(1, int(max_workers)), len(self.peaks))
 
         if workers <= 1:
