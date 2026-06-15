@@ -13,7 +13,7 @@ from mocca2.classes.data2d import Data2D
 from mocca2.classes import Compound, Component
 from mocca2.dataset.settings import ProcessingSettings
 from mocca2.clustering.cluster_components import cluster_components
-from mocca2.math import cosine_similarity
+from mocca2.math import cosine_similarity, entropy_similarity
 from mocca2.serializing import dict_encoder
 
 
@@ -379,7 +379,114 @@ class MoccaDataset:
                 for id, chromatogram in zip(keys, results):
                     self.chromatograms[id] = chromatogram
         check_nans(self)
+        
+        self.process_clustering(settings, verbose=verbose, ms_mode=False, cores=cores)
 
+        # Cluster individual peaks to build averaged compounds
+        # if verbose:
+        #     print("Clustering compounds")
+        # components = [
+        #     component
+        #     for chromatogram in self.chromatograms.values()
+        #     for component in chromatogram.all_components()
+        # ]
+
+        # dt = self.time_step()
+        # assert dt is not None
+
+        # def are_same_compound(comp1: Component, comp2: Component) -> bool:
+        #     # estimate peak width
+        #     pw1 = (
+        #         np.sum(
+        #             np.clip(
+        #                 comp1.concentration - np.max(comp1.concentration) / 2, 0, np.inf
+        #             )
+        #             > 0
+        #         )
+        #         / 2
+        #     )
+        #     pw2 = (
+        #         np.sum(
+        #             np.clip(
+        #                 comp2.concentration - np.max(comp2.concentration) / 2, 0, np.inf
+        #             )
+        #             > 0
+        #         )
+        #         / 2
+        #     )
+        #     max_peak_dist = pw1 + pw2
+
+        #     if (
+        #         abs(comp1.elution_time - comp2.elution_time)
+        #         > max_peak_dist * settings.max_peak_distance
+        #     ):
+        #         return False
+        #     if (
+        #         cosine_similarity(comp1.spectrum, comp2.spectrum)
+        #         < settings.min_spectrum_correl
+        #     ):
+        #         return False
+
+        #     return True
+
+        # def importance(comp: Component) -> float:
+        #     return comp.integral * comp.peak_fraction**4
+
+        # self.compounds = cluster_components(
+        #     components, are_same=are_same_compound, weights=importance
+        # )
+
+        # # Refine peaks
+        # if verbose:
+        #     print("Refining peaks")
+        # kwargs = {
+        #     "compounds": self.compounds,
+        #     "model": settings.peak_model,
+        #     "relaxe_concs": settings.relaxe_concs,
+        #     "min_rel_integral": settings.min_rel_integral,
+        # }
+        # if cores == 1:
+        #     for chromatogram in self.chromatograms.values():
+        #         chromatogram.refine_peaks(**kwargs)
+        # else:
+        #     with Pool(cores) as p:
+        #         keys = list(self.chromatograms.keys())
+        #         results = p.starmap(
+        #             _double_star_args,
+        #             [
+        #                 (
+        #                     Chromatogram.refine_peaks,
+        #                     {"self": self.chromatograms[k], **kwargs},
+        #                 )
+        #                 for k in keys
+        #             ],
+        #         )
+        #         for id, chromatogram in zip(keys, results):
+        #             self.chromatograms[id] = chromatogram
+        # check_nans(self)
+
+        # # Remove compounds that are not present
+        # if verbose:
+        #     print("Naming compounds")
+        # present = set()
+        # for chromatogram in self.chromatograms.values():
+        #     for component in chromatogram.all_components():
+        #         present.add(component.compound_id)
+        # self.compounds = {
+        #     id: compound for id, compound in self.compounds.items() if id in present
+        # }
+
+        # # Name all compounds
+        # self._name_compounds()
+
+        if verbose:
+            print("Processing finished!")
+    
+    def process_clustering(self, settings:ProcessingSettings, verbose: bool = True, ms_mode: bool = False, cores: int = 1):
+        """Processes deconvoluted chromatograms: creates averaged compounds, and refines peaks"""
+        def check_nans(self):
+            if any([c is None for c in self.chromatograms.values()]):
+                raise Exception("Some chromatograms are missing")
         # Cluster individual peaks to build averaged compounds
         if verbose:
             print("Clustering compounds")
@@ -418,11 +525,50 @@ class MoccaDataset:
                 abs(comp1.elution_time - comp2.elution_time)
                 > max_peak_dist * settings.max_peak_distance
             ):
+                print("DEBUG: too far", comp1.elution_time, comp2.elution_time, max_peak_dist * settings.max_peak_distance)
                 return False
             if (
                 cosine_similarity(comp1.spectrum, comp2.spectrum)
                 < settings.min_spectrum_correl
             ):
+                print("DEBUG: spectra are not similar enough", cosine_similarity(comp1.spectrum, comp2.spectrum))
+                return False
+
+            return True
+        
+        def are_same_compound_ms(comp1: Component, comp2: Component) -> bool:
+            # estimate peak width
+            pw1 = (
+                np.sum(
+                    np.clip(
+                        comp1.concentration - np.max(comp1.concentration) / 2, 0, np.inf
+                    )
+                    > 0
+                )
+                / 2
+            )
+            pw2 = (
+                np.sum(
+                    np.clip(
+                        comp2.concentration - np.max(comp2.concentration) / 2, 0, np.inf
+                    )
+                    > 0
+                )
+                / 2
+            )
+            max_peak_dist = pw1 + pw2
+
+            if (
+                abs(comp1.elution_time - comp2.elution_time)
+                > max_peak_dist * settings.max_peak_distance
+            ):
+                print("DEBUG: too far", comp1.elution_time, comp2.elution_time, max_peak_dist * settings.max_peak_distance)
+                return False
+            if (
+                entropy_similarity(comp1.spectrum, comp2.spectrum, 0.01)
+                < settings.min_spectrum_correl
+            ):
+                print("DEBUG: spectra are not similar enough", entropy_similarity(comp1.spectrum, comp2.spectrum, 0.01))
                 return False
 
             return True
@@ -430,9 +576,15 @@ class MoccaDataset:
         def importance(comp: Component) -> float:
             return comp.integral * comp.peak_fraction**4
 
-        self.compounds = cluster_components(
-            components, are_same=are_same_compound, weights=importance
-        )
+        if ms_mode:
+            print("DEBUG: Using entropy similarity for clustering in MS mode")
+            self.compounds = cluster_components(
+                components, are_same=are_same_compound_ms, weights=importance
+            )
+        else:
+            self.compounds = cluster_components(
+                components, are_same=are_same_compound, weights=importance
+            )
 
         # Refine peaks
         if verbose:
@@ -476,9 +628,6 @@ class MoccaDataset:
 
         # Name all compounds
         self._name_compounds()
-
-        if verbose:
-            print("Processing finished!")
 
     def get_area_percent(self, wl_idx: int) -> Tuple[pd.DataFrame, List[int]]:
         """
