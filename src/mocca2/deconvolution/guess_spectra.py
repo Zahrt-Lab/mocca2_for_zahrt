@@ -45,11 +45,27 @@ def guess_spectra(data: NDArray, n_compounds: int) -> NDArray:
         trim_height = np.max(data) * 0.3
     y = data[:, avg > trim_height]
 
+    # If trimming left fewer time points than needed for clustering, fall back to peak maxima / mean
+    if y.shape[1] < n_compounds:
+        if len(peaks) > 0:
+            maxima = [p.maximum for p in peaks[:n_compounds]]
+            # pad with mean spectrum if not enough peaks
+            while len(maxima) < n_compounds:
+                maxima.append(maxima[-1])
+            return data[:, maxima].T
+        else:
+            return np.tile(data.mean(axis=1), (n_compounds, 1))
+
     # Get similarity matrix
     similarity_matrix = _get_similarity_matrix(y)
 
     # Get spectra of the averaged clusters
-    spectra = _get_clustered_spectra(y, similarity_matrix, n_compounds)
+    n_clusters = min(n_compounds, y.shape[1])
+    spectra = _get_clustered_spectra(y, similarity_matrix, n_clusters)
+
+    # Pad to n_compounds if clustering returned fewer clusters
+    while len(spectra) < n_compounds:
+        spectra = np.vstack([spectra, spectra[-1:]])
 
     return spectra
 
