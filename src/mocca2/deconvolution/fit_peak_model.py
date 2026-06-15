@@ -94,9 +94,18 @@ def fit_peak_model(
                 )
                 # smooth out the concentrations
                 for idx in range(concentrations.shape[0]):
-                    concentrations[idx] = savgol_filter(
-                        concentrations[idx], max(data.shape[1] // 20, 5), 2
-                    )
+                    # # # window checks first
+                    _win = max(data.shape[1] // 20, 5)
+                    # Force an odd window
+                    _win = _win if _win % 2 == 1 else _win + 1  
+                    # clamp to peak length
+                    _win = min(_win, concentrations.shape[1])
+                    # re-ensure odd after clamping
+                    _win = _win if _win % 2 == 1 else _win - 1  
+                    if _win >= 3:  # savgol requires window > polyorder (2)
+                        concentrations[idx] = savgol_filter(
+                            concentrations[idx], _win, 2
+                        )
 
                 # find highest peak
                 component, _ = np.unravel_index(
